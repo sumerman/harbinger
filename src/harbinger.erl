@@ -27,10 +27,10 @@
 
 -type chan_id() :: term().
 -type chan_filter() :: fun((term()) -> boolean()).
--type chanreg() :: {p, l, {chan, chan_id()}}.
+-type chanreg() :: {chan, chan_id()}.
 
 -spec chan(chan_id()) -> chanreg().
-chan(Name) -> {p, l, {chan, Name}}.
+chan(Name) -> {chan, Name}.
 
 chan_msg(Chan, Msg) -> ?NOTIFICATION(Chan, Msg).
 
@@ -48,15 +48,17 @@ subscribe(Chan) ->
 -spec subscribe(chan_id(), chan_filter()) -> true.
 subscribe(Chan, FilterFun) ->
 	chan_bcast_master:start_chan_bcast(Chan),
-	gproc:reg(chan(Chan), FilterFun).
+	ok = harbinger_reg_srv:subscribe(chan(Chan), FilterFun),
+	true.
 
 -spec unsubscribe(chan_id()) -> true.
 unsubscribe(Chan) -> 
-	gproc:unreg(chan(Chan)).
+	ok = harbinger_reg_srv:unsubscribe(chan(Chan)),
+	true.
 
 -spec unsubscribe() -> true.
 unsubscribe() -> 
-	[unsubscribe(C) || C <- subscriptions()],
+	ok = harbinger_reg_srv:unsubscribe(),
 	true.
 
 -spec subscriptions() -> [chan_id()].
@@ -64,11 +66,7 @@ subscriptions() ->
 	subscriptions(self()).
 
 -spec subscriptions(pid()) -> [chan_id()].
-subscriptions(Pid) ->
-	gproc:select({l, p}, [{
-				{{p, l, {chan, '$1'}}, Pid, '_'}, 
-				[], 
-				['$1']}]).
+subscriptions(_Pid) -> [].
 
 -spec send(chan_id(), term()) -> true.
 send(Chan, Msg) -> 
@@ -78,12 +76,11 @@ send(Chan, Msg) ->
 send_local(Chan, Msg) -> 
 	K = chan(Chan),
 	M = chan_msg(Chan, Msg),
-	T = gproc:lookup_values(K),
-	%R = [P || {P, F} <- T, apply_check_f(F, Msg)],
-	lists:foreach(fun({P, F}) -> 
-				S = apply_check_f(F, Msg),
-				S andalso (P ! M)
-		end, T),
+	R = harbinger_reg_srv:subscribers(K),
+	T = [P || {_K,F,P} <- R, apply_check_f(F, Msg)],
+	%OldPr = erlang:process_flag(priority, high),
+	lists:foreach(fun(P) -> erlang:send(P, M) end, T),
+	%erlang:process_flag(priority, OldPr),
 	true.
 
 always_true(_) -> true.

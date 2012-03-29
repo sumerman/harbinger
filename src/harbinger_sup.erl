@@ -26,6 +26,7 @@ start_link() ->
 init([]) ->
     {ok, { {rest_for_one, 5, 10}, [
 				?CHILDS(chan_bcast_sup, []),
+				?CHILDW(harbinger_reg_srv, []),
 				?CHILDW(chan_bcast_master, [])
 				]} }.
 
