@@ -1,11 +1,12 @@
--module(chan_bcast).
+-module(harbinger_external).
 -behaviour(gen_server).
 
 -define(SERVER, ?MODULE).
 
 %% API
 -export([
-	start_link/1
+	start_link/0,
+	resend/2
 ]).
 
 %% gen_server callbacks
@@ -19,44 +20,52 @@
 ]).
 
 -record(state, {
-	id
 }).
 
 -include("../include/harbinger.hrl").
+-define(CHAN_BCASTER(Chan), {n, l, {?MODULE, chan, Chan}}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
--spec start_link(term()) -> {ok, pid()} | ignore | {error, Why::term()}.
-start_link(Chan) ->
-	gen_server:start_link(?MODULE, [{chan_id, Chan}], []).
+resend(Chan, Msg) ->
+	gen_server:abcast(nodes(connected), ?SERVER, ?RESEND(Chan, Msg)).
+
+-spec start_link() -> {ok, pid()} | ignore | {error, Why::term()}.
+start_link() ->
+	gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
-init(Opt) ->
-	Chan = proplists:get_value(chan_id, Opt),
-	chan_bcast_master:register_chan_bcast(Chan),
-	{ok, #state{
-			id = Chan
-		}}.
+init([]) ->
+	erlang:process_flag(priority, high),
+	%folsom_metrics:new_histogram(g_msg_latency),
+	%folsom_metrics:new_histogram(g_queue_len),
+	{ok, #state{}}.
 
 handle_call(_Msg, _From, S) ->
 	{noreply, S}.
 
-handle_cast(?RESEND(Chan, Msg), #state{ id=Chan } = S) ->
-	harbinger:send_local(Chan, Msg),
+handle_cast(?RESEND(Chan, Msg), S) ->
+	%{message_queue_len, L} = erlang:process_info(self(),message_queue_len),
+	%folsom_metrics:notify(g_queue_len, L),
+	%case Msg of
+		%{ping,_,T} ->
+			%D = timer:now_diff(erlang:now(), T) div 1000,
+			%folsom_metrics:notify(g_msg_latency, D);
+		%_ -> error_logger:info_msg("Msg:~p", [Msg])
+	%end,
+	catch harbinger:send_local(Chan, Msg),
 	{noreply, S};
 
-handle_cast(Msg, S) ->
-	error_logger:error_msg("Unexpected ~p", [Msg]),
+handle_cast(_Msg, S) ->
 	{noreply, S}.
 
 handle_info(_Msg, S) ->
 	{noreply, S}.
-
 
 terminate(_Reason, _State) -> ok.
 

@@ -35,7 +35,6 @@ chan(Name) -> {chan, Name}.
 chan_msg(Chan, Msg) -> ?NOTIFICATION(Chan, Msg).
 
 start() ->
-	application:start(gproc),
 	application:start(?MODULE).
 
 stop() ->
@@ -47,7 +46,6 @@ subscribe(Chan) ->
 
 -spec subscribe(chan_id(), chan_filter()) -> true.
 subscribe(Chan, FilterFun) ->
-	chan_bcast_master:start_chan_bcast(Chan),
 	ok = harbinger_reg_srv:subscribe(chan(Chan), FilterFun),
 	true.
 
@@ -70,7 +68,7 @@ subscriptions(_Pid) -> [].
 
 -spec send(chan_id(), term()) -> true.
 send(Chan, Msg) -> 
-	chan_bcast_master:resend(Chan, Msg),
+	harbinger_external:resend(Chan, Msg),
 	send_local(Chan, Msg).
 
 send_local(Chan, Msg) -> 
@@ -78,9 +76,7 @@ send_local(Chan, Msg) ->
 	M = chan_msg(Chan, Msg),
 	R = harbinger_reg_srv:subscribers(K),
 	T = [P || {_K,F,P} <- R, apply_check_f(F, Msg)],
-	%OldPr = erlang:process_flag(priority, high),
 	lists:foreach(fun(P) -> erlang:send(P, M) end, T),
-	%erlang:process_flag(priority, OldPr),
 	true.
 
 always_true(_) -> true.

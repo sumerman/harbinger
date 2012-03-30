@@ -45,11 +45,20 @@ subscribers(K) ->
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 
-init(Args) ->
+-record(state, {
+		reg_tab,
+		ref_tab
+	}).
+
+init(_Args) ->
 	TabOpt = [named_table, bag, 
 			protected, {read_concurrency, true}],
-	ets:new(?TAB, TabOpt),
-    {ok, Args}.
+	Reg = ets:new(?TAB, TabOpt),
+	Ref = ets:new(ref_srv_mref, []),
+	{ok, #state{
+			reg_tab = Reg,
+			ref_tab = Ref
+		}}.
 
 handle_call({subscribe, Pid, K, I}, _From, State) ->
 	add_subscribtion(State, Pid, K, I),
@@ -89,15 +98,29 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-add_subscribtion(_St, P, K, I) when is_pid(P) ->
+add_subscribtion(St, P, K, I) when is_pid(P) ->
 	ets:insert(?TAB, {K, I, P}),
-	monitor(process, P).
+	case ets:lookup(St#state.ref_tab, P) of
+		[] ->
+			Ref = monitor(process, P),
+			ets:insert(St#state.ref_tab, {P, Ref}),
+			{ok, new};
+		_  -> 
+			{ok, already_reg}
+	end.
 
 remove_subscription(_St, P, K) when is_pid(P) ->
-	%% TODO demonitor
-	ets:select_delete(?TAB, [{{K, '_', P}, [], []}]).
+	ets:select_delete(?TAB, remove_ms(P, K)).
 
-remove_all_subscriptions(_St, P) when is_pid(P) ->
-	%% TODO demonitor all
-	ets:select_delete(?TAB, [{{'_', '_', P}, [], []}]).
+remove_all_subscriptions(St, P) when is_pid(P) ->
+	[demonitor(Ref) || {_P, Ref} 
+			<- ets:lookup(St#state.ref_tab, P)],
+	ets:select_delete(?TAB, remove_all_ms(P)).
+
+remove_ms(P, K) ->
+	[{{'$1', '_', '$2'}, [{'==', '$1', K}, {'==', '$2', P}], [true]}].
+remove_all_ms(P) ->
+	[{{'$1', '_', '$2'}, [{'==', '$2', P}], [true]}].
+
+
 
