@@ -26,11 +26,6 @@
 -type chan_filter() :: fun((chan_id(), term()) -> boolean()).
 -type chanreg() :: {chan, chan_id()}.
 
--spec chan(chan_id()) -> chanreg().
-chan(Name) -> {chan, Name}.
-
-chan_msg(Chan, Msg) -> ?NOTIFICATION(Chan, Msg).
-
 start() ->
 	application:start(?MODULE).
 
@@ -71,6 +66,11 @@ send(Chan, Msg) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+-spec chan(chan_id()) -> chanreg().
+chan(Name) -> {chan, Name}.
+
+chan_msg(Chan, Msg) -> ?NOTIFICATION(Chan, Msg).
 
 try_send_hipri(Chan, Msg) -> 
 	try harbinger_hipri:resend(Chan, Msg)
