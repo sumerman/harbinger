@@ -72,13 +72,8 @@ send(Chan, Msg) ->
 %%% Internal functions
 %%%===================================================================
 
-hipri_resend(Chan, Msg) ->
-	HPs = harbinger_reg_srv:q(harbinger_hipri:signature()),
-	{_K,_I,P} = lists:nth(random:uniform(length(HPs)), HPs),
-	gen_server:cast(P, ?RESEND(Chan, Msg)).
-
 try_send_hipri(Chan, Msg) -> 
-	try hipri_resend(Chan, Msg)
+	try harbinger_hipri:resend(Chan, Msg)
 	catch
 		_:_ -> send_local(Chan, Msg)
 	end.

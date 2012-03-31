@@ -6,7 +6,7 @@
 %% API
 -export([
 	start_link/1,
-	signature/0
+	resend/2
 ]).
 
 %% gen_server callbacks
@@ -33,7 +33,10 @@
 start_link(Name) ->
 	gen_server:start_link({local, Name}, ?MODULE, [], []).
 
-signature() -> hipri_worker.
+resend(Chan, Msg) ->
+	HPs = harbinger_reg_srv:q(signature()),
+	{_K,_I,P} = lists:nth(random:uniform(length(HPs)), HPs),
+	gen_server:cast(P, ?RESEND(Chan, Msg)).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -77,3 +80,6 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+signature() -> hipri_worker.
+
