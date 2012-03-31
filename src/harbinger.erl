@@ -23,7 +23,7 @@
 %% ===================================================================
 
 -type chan_id() :: term().
--type chan_filter() :: fun((term()) -> boolean()).
+-type chan_filter() :: fun((chan_id(), term()) -> boolean()).
 -type chanreg() :: {chan, chan_id()}.
 
 -spec chan(chan_id()) -> chanreg().
