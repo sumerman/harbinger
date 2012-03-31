@@ -1,4 +1,4 @@
--module(chan_bcast_master).
+-module(harbinger_external).
 -behaviour(gen_server).
 
 -define(SERVER, ?MODULE).
@@ -6,9 +6,7 @@
 %% API
 -export([
 	start_link/0,
-	resend/2,
-	register_chan_bcast/1,
-	start_chan_bcast/1
+	resend/2
 ]).
 
 %% gen_server callbacks
@@ -34,17 +32,6 @@
 resend(Chan, Msg) ->
 	gen_server:abcast(nodes(connected), ?SERVER, ?RESEND(Chan, Msg)).
 
--spec start_chan_bcast(harbinger:chan_id()) -> {ok, pid()}.
-start_chan_bcast(Chan) ->
-	try {ok, gproc:lookup_pid(?CHAN_BCASTER(Chan))}
-	catch
-		error:badarg -> 
-			chan_bcast_sup:start_chan_bcast(Chan)
-	end.
-
-register_chan_bcast(Chan) -> 
-	gproc:reg(?CHAN_BCASTER(Chan)).
-
 -spec start_link() -> {ok, pid()} | ignore | {error, Why::term()}.
 start_link() ->
 	gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
@@ -54,14 +41,24 @@ start_link() ->
 %%%===================================================================
 
 init([]) ->
+	erlang:process_flag(priority, high),
+	%folsom_metrics:new_histogram(g_msg_latency),
+	%folsom_metrics:new_histogram(g_queue_len),
 	{ok, #state{}}.
 
 handle_call(_Msg, _From, S) ->
 	{noreply, S}.
 
-handle_cast(?RESEND(Chan, _) = M, S) ->
-	{ok, P} = start_chan_bcast(Chan),
-	gen_server:cast(P, M),	
+handle_cast(?RESEND(Chan, Msg), S) ->
+	%{message_queue_len, L} = erlang:process_info(self(),message_queue_len),
+	%folsom_metrics:notify(g_queue_len, L),
+	%case Msg of
+		%{ping,_,T} ->
+			%D = timer:now_diff(erlang:now(), T) div 1000,
+			%folsom_metrics:notify(g_msg_latency, D);
+		%_ -> error_logger:info_msg("Msg:~p", [Msg])
+	%end,
+	catch harbinger:try_send_hipri(Chan, Msg),
 	{noreply, S};
 
 handle_cast(_Msg, S) ->
@@ -69,7 +66,6 @@ handle_cast(_Msg, S) ->
 
 handle_info(_Msg, S) ->
 	{noreply, S}.
-
 
 terminate(_Reason, _State) -> ok.
 

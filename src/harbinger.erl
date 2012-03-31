@@ -1,23 +1,20 @@
 -module(harbinger).
 
-%% API
+%% Public API
 -export([
 	subscribe/1,
 	subscribe/2,
 	unsubscribe/1,
 	unsubscribe/0,
-	subscriptions/1,
-	subscriptions/0,
 	send/2,
-	send_local/2,
 	start/0,
 	stop/0
 ]).
 
 -export_type([chan_id/0, chan_filter/0]).
 
-%% Helpers
--export([always_true/1]).
+%% Internal API
+-export([always_true/2, send_local/2, try_send_hipri/2]).
 
 -include("../include/harbinger.hrl").
 
@@ -27,75 +24,39 @@
 
 -type chan_id() :: term().
 -type chan_filter() :: fun((term()) -> boolean()).
--type chanreg() :: {p, l, {chan, chan_id()}}.
+-type chanreg() :: {chan, chan_id()}.
 
 -spec chan(chan_id()) -> chanreg().
-chan(Name) -> {p, l, {chan, Name}}.
+chan(Name) -> {chan, Name}.
 
 chan_msg(Chan, Msg) -> ?NOTIFICATION(Chan, Msg).
 
 start() ->
-	application:start(gproc),
 	application:start(?MODULE).
 
 stop() ->
     application:stop(?MODULE).
 
--spec subscribe(chan_id()) -> true.
+-spec subscribe(chan_id()) -> ok.
 subscribe(Chan) ->
-	subscribe(Chan, fun ?MODULE:always_true/1).
+	subscribe(Chan, fun ?MODULE:always_true/2).
 
--spec subscribe(chan_id(), chan_filter()) -> true.
+-spec subscribe(chan_id(), chan_filter()) -> ok.
 subscribe(Chan, FilterFun) ->
-	chan_bcast_master:start_chan_bcast(Chan),
-	gproc:reg(chan(Chan), FilterFun).
+	harbinger_reg_srv:checkin(chan(Chan), FilterFun).
 
--spec unsubscribe(chan_id()) -> true.
+-spec unsubscribe(chan_id()) -> ok.
 unsubscribe(Chan) -> 
-	gproc:unreg(chan(Chan)).
+	harbinger_reg_srv:leave(chan(Chan)).
 
--spec unsubscribe() -> true.
+-spec unsubscribe() -> ok.
 unsubscribe() -> 
-	[unsubscribe(C) || C <- subscriptions()],
-	true.
-
--spec subscriptions() -> [chan_id()].
-subscriptions() -> 
-	subscriptions(self()).
-
--spec subscriptions(pid()) -> [chan_id()].
-subscriptions(Pid) ->
-	gproc:select({l, p}, [{
-				{{p, l, {chan, '$1'}}, Pid, '_'}, 
-				[], 
-				['$1']}]).
+	harbinger_reg_srv:leave().
 
 -spec send(chan_id(), term()) -> true.
 send(Chan, Msg) -> 
-	chan_bcast_master:resend(Chan, Msg),
+	harbinger_external:resend(Chan, Msg),
 	send_local(Chan, Msg).
-
-send_local(Chan, Msg) -> 
-	K = chan(Chan),
-	M = chan_msg(Chan, Msg),
-	T = gproc:lookup_values(K),
-	%R = [P || {P, F} <- T, apply_check_f(F, Msg)],
-	lists:foreach(fun({P, F}) -> 
-				S = apply_check_f(F, Msg),
-				S andalso (P ! M)
-		end, T),
-	true.
-
-always_true(_) -> true.
-
-apply_check_f(F, M) ->
-	try F(M) of
-		true -> true;
-		_    -> false
-	catch
-		_:_ -> false
-	end.
-
 
 %%% @doc
 %%% Client calls harbinger:send(foo, {bar, [1,2,3]}).
@@ -105,4 +66,40 @@ apply_check_f(F, M) ->
 %%%
 %%% Gosssip for PEX.
 %%% Lamport stamp for delivery guarantee to fresh peers (Provide better desc.)
+
+
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
+
+hipri_resend(Chan, Msg) ->
+	HPs = harbinger_reg_srv:q(harbinger_hipri:signature()),
+	{_K,_I,P} = lists:nth(random:uniform(length(HPs)), HPs),
+	gen_server:cast(P, ?RESEND(Chan, Msg)).
+
+try_send_hipri(Chan, Msg) -> 
+	try hipri_resend(Chan, Msg)
+	catch
+		_:_ -> send_local(Chan, Msg)
+	end.
+
+send_local(Chan, Msg) -> 
+    R = subscribers_for_ch(Chan),
+	M = chan_msg(Chan, Msg),
+	T = [P || {_K,F,P} <- R, apply_check_f(F, Chan, Msg)],
+	lists:foreach(fun(P) -> erlang:send(P, M) end, T),
+	true.
+
+subscribers_for_ch(Chan) ->
+	harbinger_reg_srv:q(chan(Chan)).
+
+always_true(_,_) -> true.
+
+apply_check_f(F, K, M) ->
+	try F(K, M) of
+		true -> true;
+		_    -> false
+	catch
+		_:_ -> false
+	end.
 

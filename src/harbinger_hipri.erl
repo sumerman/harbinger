@@ -1,11 +1,12 @@
--module(chan_bcast).
+-module(harbinger_hipri).
 -behaviour(gen_server).
 
 -define(SERVER, ?MODULE).
 
 %% API
 -export([
-	start_link/1
+	start_link/1,
+	signature/0
 ]).
 
 %% gen_server callbacks
@@ -19,8 +20,8 @@
 ]).
 
 -record(state, {
-	id
-}).
+		max_ql
+	}).
 
 -include("../include/harbinger.hrl").
 
@@ -28,26 +29,37 @@
 %%% API
 %%%===================================================================
 
--spec start_link(term()) -> {ok, pid()} | ignore | {error, Why::term()}.
-start_link(Chan) ->
-	gen_server:start_link(?MODULE, [{chan_id, Chan}], []).
+-spec start_link(atom()) -> {ok, pid()} | ignore | {error, Why::term()}.
+start_link(Name) ->
+	gen_server:start_link({local, Name}, ?MODULE, [], []).
+
+signature() -> hipri_worker.
 
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
-init(Opt) ->
-	Chan = proplists:get_value(chan_id, Opt),
-	chan_bcast_master:register_chan_bcast(Chan),
+init(_Opt) ->
+	erlang:process_flag(priority, high),
+	harbinger_reg_srv:checkin(signature()),
+	Env  = application:get_all_env(),
+	MaxL = proplists:get_value(max_hipri_queue_len, Env, ?MAX_HIPRI_QL),
 	{ok, #state{
-			id = Chan
+			max_ql = MaxL
 		}}.
 
 handle_call(_Msg, _From, S) ->
 	{noreply, S}.
 
-handle_cast(?RESEND(Chan, Msg), #state{ id=Chan } = S) ->
-	harbinger:send_local(Chan, Msg),
+handle_cast(?RESEND(Chan, Msg), #state{ max_ql=MaxL } = S) ->
+	case erlang:process_info(self(), message_queue_len) of
+		{_,MQL} when MQL > MaxL -> 
+			harbinger_reg_srv:leave();
+		{_,0} -> 
+			harbinger_reg_srv:checkin(signature());
+		_ -> ok
+	end,
+	catch harbinger:send_local(Chan, Msg),
 	{noreply, S};
 
 handle_cast(Msg, S) ->
