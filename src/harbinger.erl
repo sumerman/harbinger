@@ -30,7 +30,7 @@ start() ->
 	application:start(?MODULE).
 
 stop() ->
-    application:stop(?MODULE).
+	application:stop(?MODULE).
 
 -spec subscribe(chan_id()) -> ok.
 subscribe(Chan) ->
@@ -79,7 +79,7 @@ try_send_hipri(Chan, Msg) ->
 	end.
 
 send_local(Chan, Msg) -> 
-    R = subscribers_for_ch(Chan),
+	R = subscribers_for_ch(Chan),
 	M = chan_msg(Chan, Msg),
 	T = [P || {_K,F,P} <- R, apply_check_f(F, Chan, Msg)],
 	lists:foreach(fun(P) -> erlang:send(P, M) end, T),
