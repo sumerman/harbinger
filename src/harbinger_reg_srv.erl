@@ -1,5 +1,6 @@
 -module(harbinger_reg_srv).
 -behaviour(gen_server).
+
 -define(SERVER, ?MODULE).
 -define(TAB, ?SERVER).
 
@@ -9,10 +10,11 @@
 
 -export([
 	start_link/0,
-	subscribe/2,
-	unsubscribe/1,
-	unsubscribe/0,
-	subscribers/1
+	checkin/1,
+	checkin/2,
+	leave/1,
+	leave/0,
+	q/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -29,16 +31,19 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
-subscribe(K, Info) ->
-	gen_server:call(?SERVER, {subscribe, self(), K, Info}).
+checkin(K) -> 
+	checkin(K, none).
 
-unsubscribe(K) ->
-	gen_server:call(?SERVER, {unsubscribe, self(), K}).
+checkin(K, Info) ->
+	gen_server:call(?SERVER, {checkin, self(), K, Info}).
 
-unsubscribe() ->
-	gen_server:call(?SERVER, {unsubscribe, self()}).
+leave(K) ->
+	gen_server:call(?SERVER, {leave, self(), K}).
 
-subscribers(K) ->
+leave() ->
+	gen_server:call(?SERVER, {leave, self()}).
+
+q(K) ->
 	ets:lookup(?TAB, K).
 
 %% ------------------------------------------------------------------
@@ -60,16 +65,16 @@ init(_Args) ->
 			ref_tab = Ref
 		}}.
 
-handle_call({subscribe, Pid, K, I}, _From, State) ->
-	add_subscribtion(State, Pid, K, I),
+handle_call({checkin, Pid, K, I}, _From, State) ->
+	add_record(State, Pid, K, I),
     {reply, ok, State};
 
-handle_call({unsubscribe, Pid, K}, _From, State) ->
-	remove_subscription(State, Pid, K),
+handle_call({leave, Pid, K}, _From, State) ->
+	remove_record(State, Pid, K),
     {reply, ok, State};
 
-handle_call({unsubscribe, Pid}, _From, State) ->
-	remove_all_subscriptions(State, Pid),
+handle_call({leave, Pid}, _From, State) ->
+	remove_all_records(State, Pid),
     {reply, ok, State};
 
 handle_call(Request, _From, State) ->
@@ -81,7 +86,7 @@ handle_cast(Request, State) ->
     {noreply, State}.
 
 handle_info({'DOWN', _MRef, process, Pid, _}, State) ->
-	remove_all_subscriptions(State, Pid),
+	remove_all_records(State, Pid),
     {noreply, State};
 
 handle_info(Info, State) ->
@@ -98,7 +103,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-add_subscribtion(St, P, K, I) when is_pid(P) ->
+add_record(St, P, K, I) when is_pid(P) ->
 	ets:insert(?TAB, {K, I, P}),
 	case ets:lookup(St#state.ref_tab, P) of
 		[] ->
@@ -109,10 +114,10 @@ add_subscribtion(St, P, K, I) when is_pid(P) ->
 			{ok, already_reg}
 	end.
 
-remove_subscription(_St, P, K) when is_pid(P) ->
+remove_record(_St, P, K) when is_pid(P) ->
 	ets:select_delete(?TAB, remove_ms(P, K)).
 
-remove_all_subscriptions(St, P) when is_pid(P) ->
+remove_all_records(St, P) when is_pid(P) ->
 	[demonitor(Ref) || {_P, Ref} 
 			<- ets:lookup(St#state.ref_tab, P)],
 	ets:select_delete(?TAB, remove_all_ms(P)).

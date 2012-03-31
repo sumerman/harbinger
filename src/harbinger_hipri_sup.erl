@@ -1,4 +1,4 @@
--module(harbinger_sup).
+-module(harbinger_hipri_sup).
 
 -behaviour(supervisor).
 
@@ -8,9 +8,7 @@
 %% Supervisor callbacks
 -export([init/1]).
 
-%% Helper macro for declaring children of supervisor
--define(CHILDW(I, Opts), {I, {I, start_link, Opts}, transient, 5000, worker, [I]}).
--define(CHILDS(I, Opts), {I, {I, start_link, Opts}, permanent, infinity, supervisor, [I]}).
+-include("../include/harbinger.hrl").
 
 %% ===================================================================
 %% API functions
@@ -23,10 +21,14 @@ start_link() ->
 %% Supervisor callbacks
 %% ===================================================================
 
+hipri_worker_spec(K) ->
+	I = harbinger_hipri,
+	N = list_to_atom(atom_to_list(I) ++ integer_to_list(K)),
+	{N, {I, start_link, [N]}, transient, 5000, worker, [I]}.
+
 init([]) ->
-    {ok, { {rest_for_one, 5, 10}, [
-				?CHILDW(harbinger_reg_srv, []),
-				?CHILDW(harbinger_external, []),
-				?CHILDS(harbinger_hipri_sup, [])
-				]} }.
+	Env = application:get_all_env(),
+	Cnt = proplists:get_value(max_hipri_workers, Env, ?MAX_HIPRI_WRKS),
+	Wrk = lists:map(fun hipri_worker_spec/1, lists:seq(1, Cnt)),
+    {ok, { {one_for_one, 5, 10}, Wrk} }.
 

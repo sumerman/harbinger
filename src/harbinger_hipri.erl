@@ -1,12 +1,12 @@
--module(harbinger_external).
+-module(harbinger_hipri).
 -behaviour(gen_server).
 
 -define(SERVER, ?MODULE).
 
 %% API
 -export([
-	start_link/0,
-	resend/2
+	start_link/1,
+	signature/0
 ]).
 
 %% gen_server callbacks
@@ -20,52 +20,55 @@
 ]).
 
 -record(state, {
-}).
+		max_ql
+	}).
 
 -include("../include/harbinger.hrl").
--define(CHAN_BCASTER(Chan), {n, l, {?MODULE, chan, Chan}}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-resend(Chan, Msg) ->
-	gen_server:abcast(nodes(connected), ?SERVER, ?RESEND(Chan, Msg)).
+-spec start_link(atom()) -> {ok, pid()} | ignore | {error, Why::term()}.
+start_link(Name) ->
+	gen_server:start_link({local, Name}, ?MODULE, [], []).
 
--spec start_link() -> {ok, pid()} | ignore | {error, Why::term()}.
-start_link() ->
-	gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+signature() -> hipri_worker.
 
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
-init([]) ->
+init(_Opt) ->
 	erlang:process_flag(priority, high),
-	%folsom_metrics:new_histogram(g_msg_latency),
-	%folsom_metrics:new_histogram(g_queue_len),
-	{ok, #state{}}.
+	harbinger_reg_srv:checkin(signature()),
+	Env  = application:get_all_env(),
+	MaxL = proplists:get_value(max_hipri_queue_len, Env, ?MAX_HIPRI_QL),
+	{ok, #state{
+			max_ql = MaxL
+		}}.
 
 handle_call(_Msg, _From, S) ->
 	{noreply, S}.
 
-handle_cast(?RESEND(Chan, Msg), S) ->
-	%{message_queue_len, L} = erlang:process_info(self(),message_queue_len),
-	%folsom_metrics:notify(g_queue_len, L),
-	%case Msg of
-		%{ping,_,T} ->
-			%D = timer:now_diff(erlang:now(), T) div 1000,
-			%folsom_metrics:notify(g_msg_latency, D);
-		%_ -> error_logger:info_msg("Msg:~p", [Msg])
-	%end,
-	catch harbinger:try_send_hipri(Chan, Msg),
+handle_cast(?RESEND(Chan, Msg), #state{ max_ql=MaxL } = S) ->
+	case erlang:process_info(self(), message_queue_len) of
+		{_,MQL} when MQL > MaxL -> 
+			harbinger_reg_srv:leave();
+		{_,0} -> 
+			harbinger_reg_srv:checkin(signature());
+		_ -> ok
+	end,
+	catch harbinger:send_local(Chan, Msg),
 	{noreply, S};
 
-handle_cast(_Msg, S) ->
+handle_cast(Msg, S) ->
+	error_logger:error_msg("Unexpected ~p", [Msg]),
 	{noreply, S}.
 
 handle_info(_Msg, S) ->
 	{noreply, S}.
+
 
 terminate(_Reason, _State) -> ok.
 
