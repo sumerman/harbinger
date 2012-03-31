@@ -14,8 +14,9 @@ Now:
 
 Roadmap:
 --------
-
+* Node monitoring, "try other route", undelivered messages preservation
 * Gossiping nodes state and optimal route detection
+* Overload protection
 * Multidimensional topic space
 * Specialized structures for filtering with funs (CobasTree or similar technique)
 
