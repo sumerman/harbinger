@@ -58,9 +58,6 @@ send(Chan, Msg) ->
 %%% Msg goes to the local broker
 %%% which in turn looks up for local subscribers and send Msg to them.
 %%% Then broker looks up for a other subscribed nodes and notifies known peers
-%%%
-%%% Gosssip for PEX.
-%%% Lamport stamp for delivery guarantee to fresh peers (Provide better desc.)
 
 
 %%%===================================================================

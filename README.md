@@ -14,9 +14,9 @@ Now:
 
 Roadmap:
 --------
-* Node monitoring, "try other route", undelivered messages preservation
-* Gossiping nodes state and optimal route detection
+* Totem implementation
+	* Node monitoring, undelivered messages preservation
+	* Sync nodes state
+	* Atomic b-cast (should be optional)
 * Overload protection
-* Multidimensional topic space
-* Specialized structures for filtering with funs (CobasTree or similar technique)
 
