@@ -120,6 +120,7 @@ remove_record(_St, P, K) when is_pid(P) ->
 remove_all_records(St, P) when is_pid(P) ->
 	[demonitor(Ref) || {_P, Ref} 
 			<- ets:lookup(St#state.ref_tab, P)],
+	ets:delete(St#state.ref_tab, P),
 	ets:select_delete(?TAB, remove_all_ms(P)).
 
 remove_ms(P, K) ->
